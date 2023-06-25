@@ -1,0 +1,8 @@
+venv/
+
+*.csv
+*.jpg
+
+.DS_Store
+.ipynb_checkpoints
+.python-version
