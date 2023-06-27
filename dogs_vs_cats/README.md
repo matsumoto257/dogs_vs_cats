@@ -1,6 +1,6 @@
 # dogs_vs_cats
 
-```resnet_train.py``` : とりあえず写経
+```resnet_train.py``` : とりあえず写経  
 ```dog_vs_cats.ipynb``` : 実験的にコードを実行したい
 
 ## reference
