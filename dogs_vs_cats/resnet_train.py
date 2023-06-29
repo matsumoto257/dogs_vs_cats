@@ -31,7 +31,7 @@ def setup_train_val_split(labels, dryrun=False, seed=0):
     train_indices, val_indices = next(splitter.split(x, y))
     #dryrun=True→ランダムに100個run
     if dryrun:
-        train_indices = np.random.choice(train_indices, 100, replace=False)
+        train_indices = np.random.choice(train_indices, 100, replace=False)  #train_indicesを更新
         val_indices = np.random.choice(val_indices, 100, replace=False)
 
     return train_indices, val_indices
@@ -202,10 +202,12 @@ def main():
     # parser.add_argumentで受け取る引数を追加していく
     parser.add_argument("--data_dir", required=True)  # オプション引数を追加,required=True:指定必須
     parser.add_argument("--device", default="mps")
+    parser.add_argument("--dryrun", action="store_true")   #オプションを指定:True、オプションを指定しない:False
     args = parser.parse_args()  # 引数を解析
 
     data_dir = pathlib.Path(args.data_dir)
     device = args.device
+    dryrun = args.dryrun
 
     train_dir = os.path.join(data_dir, "train")
 
@@ -221,7 +223,7 @@ def main():
 
     batch_size = 32
 
-    train_subsec5(data_dir=data_dir, batch_size=batch_size, dryrun=False, device=device)
+    train_subsec5(data_dir=data_dir, batch_size=batch_size, dryrun=dryrun, device=device)
 
 if __name__ == "__main__":
     main()
