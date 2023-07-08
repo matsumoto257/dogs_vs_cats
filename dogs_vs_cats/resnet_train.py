@@ -101,6 +101,7 @@ def setup_train_val_loaders(data_dir, batch_size, dryrun=False):
     )
     return train_loader, val_loader
 
+
 ########################################################################################################################
 # train loop
 ########################################################################################################################
@@ -171,6 +172,60 @@ def train(model, optimizer, train_loader, val_loader, n_epochs, device):
         )
 
 
+
+########################################################################################################################
+# predict
+########################################################################################################################
+
+#test用DataLoaderを設定
+def setup_test_loader(data_dir, batch_size, dryrun):
+    dataset = torchvision.datasets.ImageFolder(
+        os.path.join(data_dir, "test")   #trainデータの入っているディレクトリのパス
+        , transform=setup_center_crop_transform()
+    )
+    #os.path.splitext() : 拡張子とそれ以外に分割されてタプルとして返される。拡張子はドット.込みの文字列。 e.g."('1', '.jpg')"
+    #os.path.basename() : パス文字列からファイル名を取得する e.g."1.jpg"
+    #test imageのidを取得
+    image_ids = [
+        os.path.splitext(os.path.basename(path))[0] for path, _ in dataset.imgs   # torchvision.datasets.ImageFolder.imgs : List of (image path, class_index) tuples
+    ]
+
+    if dryrun:
+        dataset = torch.utils.data.Subset(dataset, range(0, 100))  #上から100データのデータセット
+        image_ids = image_ids[:100]  #test imageのidを上から100個
+    
+    loader = torch.utils.data.DataLoader(
+        dataset,
+        batch_size=batch_size,
+        num_workers=8
+    )
+    return loader, image_ids
+
+#testデータに対して予測
+def predict(model, loader, device):
+    pred_fun = torch.nn.Softmax(dim=1)   #dim=1を指定した場合 : 行単位でSoftmaxをかけてくれる(=行の合計が1)
+    preds = []
+
+    for x, _ in tqdm(loader):
+        #torch.set_grad_enabled : 勾配計算のオンまたはオフを設定するコンテキストマネージャー
+        with torch.set_grad_enabled(False):
+            x = x.to(device)
+            y = pred_fun(model(x))
+        y = y.cpu().numpy()  #TensorをNumpy Arrayに変換する.一度cpuに移してからnumpy arrayに変換
+        y = y[:,1]   # cat:0, dog: 1
+        preds.append(y)
+    preds = np.concatenate(preds)
+    return preds
+
+#out_path下のファイルにtest idとその予測値を書き込む
+def write_prediction(image_ids, prediction, out_path):
+    with open(out_path, "w") as f:
+        f.write("id, label\n")   #open().write() : 文字列"id, label"を書き込み、\n : 改行
+        for i, p in zip(image_ids, prediction):   #zip : 複数のリストの要素をまとめて取得
+            f.write("{},{}\n".format(i, p))
+
+
+
 ########################################################################################################################
 # 各種実行設定
 ########################################################################################################################
@@ -196,16 +251,42 @@ def train_subsec5(data_dir, batch_size, dryrun=False, device="mps"):
     return model
 
 
+#testデータに対する予測、出力を実行
+def predict_subsec5(
+        data_dir, out_dir, model, batch_size, dryrun=False, device="mps"
+):
+    test_loader, image_ids = setup_test_loader(
+        data_dir, batch_size, dryrun=dryrun
+    )
+    preds = predict(model, test_loader, device)
+    write_prediction(image_ids, preds, out_dir / "out.csv")  #Pathオブジェクトに対して/演算子を使うとパスが連結される
+
+
+#学習から推論まで一連をまとめて実行(base model)
+def run_5(data_dir, out_dir, dryrun, device):
+    batch_size = 32
+    model = train_subsec5(data_dir, batch_size, dryrun, device)
+
+    # clip無しの推論
+    predict_subsec5(data_dir, out_dir, model, batch_size, dryrun, device)
+
+
 
 def main():
     parser = argparse.ArgumentParser()   #パーサを作る
     # parser.add_argumentで受け取る引数を追加していく
     parser.add_argument("--data_dir", required=True)  # オプション引数を追加,required=True:指定必須
+    parser.add_argument("--out_dir", default="./out")
+    parser.add_argument("--forecasts", action="store_true")  #学習のみか学習&推論 true : 推論も
     parser.add_argument("--device", default="mps")
     parser.add_argument("--dryrun", action="store_true")   #オプションを指定:True、オプションを指定しない:False
     args = parser.parse_args()  # 引数を解析
 
+    #引数をオブジェクトに
     data_dir = pathlib.Path(args.data_dir)
+    out_dir = pathlib.Path(args.out_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)   #Pathオブジェクト.makdir() : ディレクトリ作成
+    forecasts = args.forecasts
     device = args.device
     dryrun = args.dryrun
 
@@ -221,9 +302,14 @@ def main():
     else:
         print('mps is not available')
 
-    batch_size = 32
 
-    train_subsec5(data_dir=data_dir, batch_size=batch_size, dryrun=dryrun, device=device)
+    #学習のみ
+    if forecasts == False:
+        batch_size = 32
+        train_subsec5(data_dir=data_dir, batch_size=batch_size, dryrun=dryrun, device=device)
+    #学習、推論
+    elif forecasts:
+        run_5(data_dir, out_dir, dryrun, device)
 
 if __name__ == "__main__":
     main()
