@@ -8,3 +8,7 @@ venv/
 .python-version
 
 .vscode/
+
+#dataset directory
+dogs-vs-cats-redux-kernels-edition/
+out/
