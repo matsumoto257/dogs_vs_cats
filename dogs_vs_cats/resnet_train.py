@@ -29,10 +29,10 @@ def setup_train_val_split(labels, dryrun=False, seed=0):
     #x:分割するデータのインデックスの配列,y:それに対応するラベルの配列
     #next()でsplitter.split(x, y)から要素を取り出す
     train_indices, val_indices = next(splitter.split(x, y))
-    #dryrun=True→ランダムに100個run
+    #dryrun=True→ランダムに1個run
     if dryrun:
-        train_indices = np.random.choice(train_indices, 100, replace=False)  #train_indicesを更新
-        val_indices = np.random.choice(val_indices, 100, replace=False)
+        train_indices = np.random.choice(train_indices, 1, replace=False)  #train_indicesを更新
+        val_indices = np.random.choice(val_indices, 1, replace=False)
 
     return train_indices, val_indices
 
@@ -168,7 +168,7 @@ def train(model, optimizer, train_loader, val_loader, n_epochs, device):
         #validateのacc、loss
         val_acc, val_loss = validate_1epoch(model, val_loader, lossfun, device)
         print(
-            f"epoch={epoch}, train loss={train_loss}, train accuracy={train_acc}, val loss={val_loss}, val accuracy={val_acc}"
+            f"epoch={epoch}, train loss={train_loss}, train accuracy={train_acc}, val loss={val_loss}, val accuracy={val_acc}, device={device}"
         )
 
 
@@ -235,7 +235,7 @@ def write_prediction(image_ids, prediction, out_path):
 #
 
 #1エポック(=625イテレーション|batch_size = 32)の学習を実行
-def train_subsec5(data_dir, batch_size, dryrun=False, device="mps"):
+def train_subsec5(data_dir, batch_size, dryrun=False, device="cuda:0"):
     model = torchvision.models.resnet50(weights=torchvision.models.ResNet50_Weights.IMAGENET1K_V2)    #事前学習済みresnet50
     model.fc = torch.nn.Linear(model.fc.in_features, 2)   #出力層が1000次元になっているため2クラス分類に合わせる
     model.to(device)
@@ -253,7 +253,7 @@ def train_subsec5(data_dir, batch_size, dryrun=False, device="mps"):
 
 #testデータに対する予測、出力を実行
 def predict_subsec5(
-        data_dir, out_dir, model, batch_size, dryrun=False, device="mps"
+        data_dir, out_dir, model, batch_size, dryrun=False, device="cuda:0"
 ):
     test_loader, image_ids = setup_test_loader(
         data_dir, batch_size, dryrun=dryrun
@@ -278,13 +278,13 @@ def main():
     parser.add_argument("--data_dir", required=True)  # オプション引数を追加,required=True:指定必須
     parser.add_argument("--out_dir", default="./out")
     parser.add_argument("--forecasts", action="store_true")  #学習のみか学習&推論 true : 推論も
-    parser.add_argument("--device", default="mps")
+    parser.add_argument("--device", default="cuda:0")
     parser.add_argument("--dryrun", action="store_true")   #オプションを指定:True、オプションを指定しない:False
     args = parser.parse_args()  # 引数を解析
 
     #引数をオブジェクトに
-    data_dir = pathlib.Path(args.data_dir)
-    out_dir = pathlib.Path(args.out_dir)
+    data_dir = pathlib.Path(args.data_dir)  #データのあるパス
+    out_dir = pathlib.Path(args.out_dir)  #予測結果の出力先のディレクトリのパス
     out_dir.mkdir(parents=True, exist_ok=True)   #Pathオブジェクト.makdir() : ディレクトリ作成
     forecasts = args.forecasts
     device = args.device
@@ -297,10 +297,11 @@ def main():
     print(data_dir.exists())    #パスの存在を確認
     print(train_dir)
     print(device)
-    if torch.backends.mps.is_built():
-        print('mps is available')
+    if torch.cuda.is_available():
+        print('cuda:0 is available')
     else:
-        print('mps is not available')
+        device = "cpu"
+        print('cuda:0 is not available')
 
 
     #学習のみ
