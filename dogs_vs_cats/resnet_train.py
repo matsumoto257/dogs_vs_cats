@@ -29,10 +29,10 @@ def setup_train_val_split(labels, dryrun=False, seed=0):
     #x:分割するデータのインデックスの配列,y:それに対応するラベルの配列
     #next()でsplitter.split(x, y)から要素を取り出す
     train_indices, val_indices = next(splitter.split(x, y))
-    #dryrun=True→ランダムに1個run
+    #dryrun=True→ランダムに50個run
     if dryrun:
-        train_indices = np.random.choice(train_indices, 1, replace=False)  #train_indicesを更新
-        val_indices = np.random.choice(val_indices, 1, replace=False)
+        train_indices = np.random.choice(train_indices, 50, replace=False)  #train_indicesを更新
+        val_indices = np.random.choice(val_indices, 50, replace=False)
 
     return train_indices, val_indices
 
@@ -91,13 +91,13 @@ def setup_train_val_loaders(data_dir, batch_size, dryrun=False):
         batch_size=batch_size,   #how many samples per batch to load (default: 1).
         shuffle=True,  # set to True to have the data reshuffled at every epoch (default: False).
         drop_last=True,
-        num_workers=8,   #ミニバッチを作成する際の並列実行数を指定できる.最大で CPU の論理スレッド数分の高速化が期待できる.
+        num_workers=2,   #ミニバッチを作成する際の並列実行数を指定できる.最大で CPU の論理スレッド数分の高速化が期待できる.
     )
     #valデータセットからミニバッチを作成する理由がいまいち分からない
     val_loader = torch.utils.data.DataLoader(
         val_dataset,
         batch_size=batch_size,
-        num_workers=8
+        num_workers=2
     )
     return train_loader, val_loader
 
@@ -191,13 +191,13 @@ def setup_test_loader(data_dir, batch_size, dryrun):
     ]
 
     if dryrun:
-        dataset = torch.utils.data.Subset(dataset, range(0, 100))  #上から100データのデータセット
-        image_ids = image_ids[:100]  #test imageのidを上から100個
+        dataset = torch.utils.data.Subset(dataset, range(0, 50))  #上から50データのデータセット
+        image_ids = image_ids[:50]  #test imageのidを上から50個
     
     loader = torch.utils.data.DataLoader(
         dataset,
         batch_size=batch_size,
-        num_workers=8
+        num_workers=2
     )
     return loader, image_ids
 
