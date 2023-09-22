@@ -270,9 +270,8 @@ def run_5(data_dir, out_dir, dryrun, device):
     # clip無しの推論
     predict_subsec5(data_dir, out_dir, model, batch_size, dryrun, device)
 
-
-
-def main():
+#引数の処理
+def get_args():
     parser = argparse.ArgumentParser()   #パーサを作る
     # parser.add_argumentで受け取る引数を追加していく
     parser.add_argument("--data_dir", required=True)  # オプション引数を追加,required=True:指定必須
@@ -281,7 +280,9 @@ def main():
     parser.add_argument("--device", default="cuda:0")
     parser.add_argument("--dryrun", action="store_true")   #オプションを指定:True、オプションを指定しない:False
     args = parser.parse_args()  # 引数を解析
+    return args
 
+def main(args):
     #引数をオブジェクトに
     data_dir = pathlib.Path(args.data_dir)  #データのあるパス
     out_dir = pathlib.Path(args.out_dir)  #予測結果の出力先のディレクトリのパス
@@ -313,4 +314,4 @@ def main():
         run_5(data_dir, out_dir, dryrun, device)
 
 if __name__ == "__main__":
-    main()
+    main(get_args())
