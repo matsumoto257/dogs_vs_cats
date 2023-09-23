@@ -69,7 +69,7 @@ def setup_train_val_datasets(data_dir, dryrun=False):
     )
     # labels=正解ラベルの配列
     labels = get_labels(dataset)
-    #etup_train_val_split
+    # setup_train_val_split
     train_indices, val_indices = setup_train_val_split(labels, dryrun)
 
     #訓練データセットと検証データセットにデータセットを分割する際はSubsetクラスを用いる
@@ -170,7 +170,7 @@ def train(model, optimizer, train_loader, val_loader, n_epochs, device):
         #validateのacc、loss
         val_acc, val_loss = validate_1epoch(model, val_loader, lossfun, device)
         print(
-            f"epoch={epoch}, train loss={train_loss}, train accuracy={train_acc}, val loss={val_loss}, val accuracy={val_acc}, device={device}, optimizer={optimizer}"
+            f"epoch={epoch}, train_loss={train_loss}, train_accuracy={train_acc}, val_loss={val_loss}, val_accuracy={val_acc}, device={device}, optimizer={optimizer}"
         )
 
 
@@ -212,9 +212,14 @@ def predict(model, loader, device):
         #torch.set_grad_enabled : 勾配計算のオンまたはオフを設定するコンテキストマネージャー
         with torch.set_grad_enabled(False):
             x = x.to(device)
-            y = pred_fun(model(x))
+            """
+            model(x)の値は出力層の活性化関数に入力する前の値だと思われる（つまりzの方が意味が近い）
+            おそらくもとのクラスではdef __init__()の中でself.fcで終了しているかも
+            """
+            z = model(x)
+            y = pred_fun(z)
         y = y.cpu().numpy()  #TensorをNumpy Arrayに変換する.一度cpuに移してからnumpy arrayに変換
-        y = y[:,1]   # cat:0, dog: 1
+        y = y[:,1]   # cat:0, dog:1 おそらくdogの予測確率を計算
         preds.append(y)
     preds = np.concatenate(preds)
     return preds
@@ -236,6 +241,8 @@ def write_prediction(image_ids, prediction, out_path):
 # 5: First try
 #
 
+#make_optimizerの作り方
+#https://rightcode.co.jp/blog/information-technology/pytorch-yaml-optimizer-parameter-management-simple-method-complete
 def make_optimizer(params, name, **kwargs):
     # torch.optim.Optimizer(params, ,,,)
     # params : 更新したいパラメータを渡す.このパラメータは微分可能であること
@@ -243,8 +250,10 @@ def make_optimizer(params, name, **kwargs):
     return torch.optim.__dict__[name](params, **kwargs)
 
 
-#1エポック(=625イテレーション|batch_size = 32)の学習を実行
-def train_subsec5(data_dir, batch_size, dryrun, device="cuda:0", target_optimizer=None, **config):
+#1エポック(=625イテレーション|batch_size = 32)の学習を実行および学習済みのモデルを返す
+def train_subsec5(
+        data_dir, batch_size, dryrun, device="cuda:0", target_optimizer=None, n_epochs=1, **config
+        ):
     model = torchvision.models.resnet50(weights=torchvision.models.ResNet50_Weights.IMAGENET1K_V2)    #事前学習済みresnet50
     model.fc = torch.nn.Linear(model.fc.in_features, 2)   #出力層が1000次元になっているため2クラス分類に合わせる
     model.to(device)
@@ -255,15 +264,15 @@ def train_subsec5(data_dir, batch_size, dryrun, device="cuda:0", target_optimize
         data_dir, batch_size, dryrun
     )
     train(
-        model, optimizer, train_loader, val_loader, n_epochs=1, device=device
+        model, optimizer, train_loader, val_loader, n_epochs=n_epochs, device=device
     )
-    # return model  <--これべつにいらないかも
+    return model  #<--これべつにいらないかも（必要）
 
 
 #testデータに対する予測、出力を実行
 def predict_subsec5(
         data_dir, out_dir, model, batch_size, dryrun, device="cuda:0"
-):
+        ):
     test_loader, image_ids = setup_test_loader(
         data_dir, batch_size, dryrun=dryrun
     )
@@ -272,9 +281,11 @@ def predict_subsec5(
 
 
 #学習から推論まで一連をまとめて実行(base model)
-def run_5(data_dir, out_dir, dryrun, device):
+def run_5(
+        data_dir, out_dir, dryrun, device, target_optimizer, n_epochs, **config
+        ):
     batch_size = 32
-    model = train_subsec5(data_dir, batch_size, dryrun, device)
+    model = train_subsec5(data_dir, batch_size, dryrun, device, target_optimizer, n_epochs, **config)
 
     # clip無しの推論
     predict_subsec5(data_dir, out_dir, model, batch_size, dryrun, device)
@@ -284,13 +295,14 @@ def get_args():
     parser = argparse.ArgumentParser()   #パーサを作る
     # parser.add_argumentで受け取る引数を追加していく
     parser.add_argument("--data_dir", required=True)  # オプション引数を追加,required=True:指定必須
-    parser.add_argument("--config_path", required=True)   #config.yamlのパス
+    parser.add_argument("--config_path", default="./config.yaml")   #config.yamlのパス
     parser.add_argument("--out_dir", default="./out")
     parser.add_argument("--forecasts", action="store_true")  #学習のみか学習&推論 true : 推論も
     parser.add_argument("--device", default="cuda:0")
     parser.add_argument("--dryrun", action="store_true")   #オプションを指定:True、オプションを指定しない:False
+    parser.add_argument("--n_epochs", default=1, type=int)   #エポック数を指定、整数値に変換
     # モデルのconfig
-    parser.add_argument("--optimizer", required=True)   #optimizerの指定は''はあってもなくても同じそう
+    parser.add_argument("--optimizer", required=True)   #optimizerの指定は''はあってもなくても同じそう（コマンドライン引数で指定された値はデフォルトでは文字列型）
 
     args = parser.parse_args()  # 引数を解析
     return args
@@ -304,6 +316,7 @@ def main(args):
     forecasts = args.forecasts
     device = args.device
     dryrun = args.dryrun
+    n_epochs = args.n_epochs
     target_optimizer = args.optimizer
 
     #config.yamlの読み込んで辞書型オブジェクトconfigの作成
@@ -333,15 +346,19 @@ def main(args):
             , dryrun=dryrun
             , device=device
             , target_optimizer=target_optimizer
+            , n_epochs=n_epochs
             , **config
             )
     #学習、推論
-    elif forecasts:
+    else:
         run_5(
-            data_dir
-            , out_dir
-            , dryrun
-            , device
+            data_dir=data_dir
+            , out_dir=out_dir
+            , dryrun=dryrun
+            , device=device
+            , target_optimizer=target_optimizer
+            , n_epochs=n_epochs
+            , **config
             )
 
 if __name__ == "__main__":
