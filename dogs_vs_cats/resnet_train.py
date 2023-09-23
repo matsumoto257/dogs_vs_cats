@@ -9,6 +9,7 @@ import torchvision.transforms.functional
 from torchvision import transforms
 import os
 from tqdm import tqdm
+import yaml
 
 
 
@@ -29,10 +30,10 @@ def setup_train_val_split(labels, dryrun=False, seed=0):
     #x:分割するデータのインデックスの配列,y:それに対応するラベルの配列
     #next()でsplitter.split(x, y)から要素を取り出す
     train_indices, val_indices = next(splitter.split(x, y))
-    #dryrun=True→ランダムに50個run
+    #dryrun=True→ランダムに10個run
     if dryrun:
-        train_indices = np.random.choice(train_indices, 50, replace=False)  #train_indicesを更新
-        val_indices = np.random.choice(val_indices, 50, replace=False)
+        train_indices = np.random.choice(train_indices, 10, replace=False)  #train_indicesを更新
+        val_indices = np.random.choice(val_indices, 10, replace=False)
 
     return train_indices, val_indices
 
@@ -106,7 +107,7 @@ def setup_train_val_loaders(data_dir, batch_size, dryrun=False):
 # train loop
 ########################################################################################################################
 
-#1epch train
+#1epoch train
 def train_1epoch(model, train_loader, lossfun, optimizer, device):
     model.train()   #訓練モード.下で定義しているtrain()とはおそらく違う
     total_loss, total_acc = 0.0, 0.0
@@ -157,6 +158,7 @@ def validate_1epoch(model, val_loader, lossfun, device):
 
 
 #学習したいエポック回数だけ学習
+#上記のtrain_1epochは1エポックの学習を定義しているのに対し、こちらはエポック回数も含めた全体の学習
 def train(model, optimizer, train_loader, val_loader, n_epochs, device):
     lossfun = torch.nn.CrossEntropyLoss()
 
@@ -168,7 +170,7 @@ def train(model, optimizer, train_loader, val_loader, n_epochs, device):
         #validateのacc、loss
         val_acc, val_loss = validate_1epoch(model, val_loader, lossfun, device)
         print(
-            f"epoch={epoch}, train loss={train_loss}, train accuracy={train_acc}, val loss={val_loss}, val accuracy={val_acc}, device={device}"
+            f"epoch={epoch}, train loss={train_loss}, train accuracy={train_acc}, val loss={val_loss}, val accuracy={val_acc}, device={device}, optimizer={optimizer}"
         )
 
 
@@ -191,8 +193,8 @@ def setup_test_loader(data_dir, batch_size, dryrun):
     ]
 
     if dryrun:
-        dataset = torch.utils.data.Subset(dataset, range(0, 50))  #上から50データのデータセット
-        image_ids = image_ids[:50]  #test imageのidを上から50個
+        dataset = torch.utils.data.Subset(dataset, range(0, 10))  #上から10データのデータセット
+        image_ids = image_ids[:10]  #test imageのidを上から50個
     
     loader = torch.utils.data.DataLoader(
         dataset,
@@ -234,13 +236,20 @@ def write_prediction(image_ids, prediction, out_path):
 # 5: First try
 #
 
+def make_optimizer(params, name, **kwargs):
+    # torch.optim.Optimizer(params, ,,,)
+    # params : 更新したいパラメータを渡す.このパラメータは微分可能であること
+    # m.x は m.__dict__["x"] と等価です（e.g. torch.optim.SGD  ==  torch.optim.__dict__['SGD']）
+    return torch.optim.__dict__[name](params, **kwargs)
+
+
 #1エポック(=625イテレーション|batch_size = 32)の学習を実行
-def train_subsec5(data_dir, batch_size, dryrun=False, device="cuda:0"):
+def train_subsec5(data_dir, batch_size, dryrun, device="cuda:0", target_optimizer=None, **config):
     model = torchvision.models.resnet50(weights=torchvision.models.ResNet50_Weights.IMAGENET1K_V2)    #事前学習済みresnet50
     model.fc = torch.nn.Linear(model.fc.in_features, 2)   #出力層が1000次元になっているため2クラス分類に合わせる
     model.to(device)
 
-    optimizer = torch.optim.SGD(model.parameters(), lr=0.01, momentum=0.9)   #最適化アルゴリズム:SGD.momentumが分からない
+    optimizer = make_optimizer(model.parameters(), **config['optimizer_v3'][target_optimizer])   #最適化アルゴリズム
     #DataLoaderを呼び出す
     train_loader, val_loader = setup_train_val_loaders(
         data_dir, batch_size, dryrun
@@ -248,12 +257,12 @@ def train_subsec5(data_dir, batch_size, dryrun=False, device="cuda:0"):
     train(
         model, optimizer, train_loader, val_loader, n_epochs=1, device=device
     )
-    return model
+    # return model  <--これべつにいらないかも
 
 
 #testデータに対する予測、出力を実行
 def predict_subsec5(
-        data_dir, out_dir, model, batch_size, dryrun=False, device="cuda:0"
+        data_dir, out_dir, model, batch_size, dryrun, device="cuda:0"
 ):
     test_loader, image_ids = setup_test_loader(
         data_dir, batch_size, dryrun=dryrun
@@ -275,21 +284,31 @@ def get_args():
     parser = argparse.ArgumentParser()   #パーサを作る
     # parser.add_argumentで受け取る引数を追加していく
     parser.add_argument("--data_dir", required=True)  # オプション引数を追加,required=True:指定必須
+    parser.add_argument("--config_path", required=True)   #config.yamlのパス
     parser.add_argument("--out_dir", default="./out")
     parser.add_argument("--forecasts", action="store_true")  #学習のみか学習&推論 true : 推論も
     parser.add_argument("--device", default="cuda:0")
     parser.add_argument("--dryrun", action="store_true")   #オプションを指定:True、オプションを指定しない:False
+    # モデルのconfig
+    parser.add_argument("--optimizer", required=True)   #optimizerの指定は''はあってもなくても同じそう
+
     args = parser.parse_args()  # 引数を解析
     return args
 
 def main(args):
     #引数をオブジェクトに
     data_dir = pathlib.Path(args.data_dir)  #データのあるパス
+    config_file_path = pathlib.Path(args.config_path)   #config.yamlのパスオブジェクト
     out_dir = pathlib.Path(args.out_dir)  #予測結果の出力先のディレクトリのパス
     out_dir.mkdir(parents=True, exist_ok=True)   #Pathオブジェクト.makdir() : ディレクトリ作成
     forecasts = args.forecasts
     device = args.device
     dryrun = args.dryrun
+    target_optimizer = args.optimizer
+
+    #config.yamlの読み込んで辞書型オブジェクトconfigの作成
+    with open(config_file_path, 'r') as f:
+        config = yaml.safe_load(f)
 
     train_dir = os.path.join(data_dir, "train")
 
@@ -308,10 +327,22 @@ def main(args):
     #学習のみ
     if forecasts == False:
         batch_size = 32
-        train_subsec5(data_dir=data_dir, batch_size=batch_size, dryrun=dryrun, device=device)
+        train_subsec5(
+            data_dir=data_dir
+            , batch_size=batch_size
+            , dryrun=dryrun
+            , device=device
+            , target_optimizer=target_optimizer
+            , **config
+            )
     #学習、推論
     elif forecasts:
-        run_5(data_dir, out_dir, dryrun, device)
+        run_5(
+            data_dir
+            , out_dir
+            , dryrun
+            , device
+            )
 
 if __name__ == "__main__":
     main(get_args())
