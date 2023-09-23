@@ -1,0 +1,18 @@
+#マッピング
+optimizer:
+  SGD:
+    name: SGD
+    lr: 0.01
+    momentum: 0.9
+
+model:
+  name: resnet50
+
+test:
+  # - はシーケンス（配列・リスト）
+  - a:
+    name: a
+  - b:
+    name: b
+  - c:
+    name: c
