@@ -5,6 +5,24 @@ optimizer:
     lr: 0.01
     momentum: 0.9
 
+optimizer_v2:
+  target: SGD
+  ourputs:
+    SGD:
+      name: SGD
+      lr: 0.01
+      momentum: 0.9
+    Adam:
+      name: Adam
+
+optimizer_v3:
+  SGD:
+    name: SGD
+    lr: 0.01
+    momentum: 0.9
+  Adam:
+    name: Adam
+
 model:
   name: resnet50
 
