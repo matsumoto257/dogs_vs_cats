@@ -20,6 +20,7 @@ optimizer_v3:
     name: SGD
     lr: 0.01
     momentum: 0.9
+    weight_decay: 0.0001
   Adam:
     name: Adam
     lr: 0.05

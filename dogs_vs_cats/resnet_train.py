@@ -108,7 +108,7 @@ def setup_train_val_loaders(data_dir, batch_size, dryrun=False):
 ########################################################################################################################
 
 #1epoch train
-def train_1epoch(model, train_loader, lossfun, optimizer, device):
+def train_1epoch(model, train_loader, lossfun, optimizer, lr_scheduler, device):
     model.train()   #訓練モード.下で定義しているtrain()とはおそらく違う
     total_loss, total_acc = 0.0, 0.0
 
@@ -124,6 +124,7 @@ def train_1epoch(model, train_loader, lossfun, optimizer, device):
         _, pred = torch.max(y.detach(), 1)
         loss.backward()   #逆伝播
         optimizer.step()  #パラメータの更新
+        lr_scheduler.step()  #設定したSchedulerに合わせて学習率をスケジューリングさせる際はscheduler.step()
 
         total_loss += loss.item() * x.size(0)   #誤差を累積させる.x.size(0)を乗算する理由は分からない
         total_acc += torch.sum(pred == t)    #acc
@@ -159,18 +160,19 @@ def validate_1epoch(model, val_loader, lossfun, device):
 
 #学習したいエポック回数だけ学習
 #上記のtrain_1epochは1エポックの学習を定義しているのに対し、こちらはエポック回数も含めた全体の学習
-def train(model, optimizer, train_loader, val_loader, n_epochs, device):
+def train(model, optimizer, lr_scheduler, train_loader, val_loader, n_epochs, device):
     lossfun = torch.nn.CrossEntropyLoss()
 
     for epoch in tqdm(range(n_epochs)):   #学習するエポック数
         #trainのacc、loss
         train_acc, train_loss = train_1epoch(
-            model, train_loader, lossfun, optimizer, device
+            model, train_loader, lossfun, optimizer, lr_scheduler, device
         )
         #validateのacc、loss
         val_acc, val_loss = validate_1epoch(model, val_loader, lossfun, device)
+        lr = optimizer.param_groups[0]["lr"]   #param_groups:あとで調べる
         print(
-            f"epoch={epoch}, train_loss={train_loss}, train_accuracy={train_acc}, val_loss={val_loss}, val_accuracy={val_acc}, device={device}, optimizer={optimizer}"
+            f"epoch={epoch}, train_loss={train_loss}, train_accuracy={train_acc}, val_loss={val_loss}, val_accuracy={val_acc}, device={device}, optimizer={optimizer}, lr={lr}"
         )
 
 
@@ -251,22 +253,30 @@ def make_optimizer(params, name, **kwargs):
 
 
 #1エポック(=625イテレーション|batch_size = 32)の学習を実行および学習済みのモデルを返す
+#モデル定義->optimizer定義->訓練用、検証用のdataloaderを呼び出す->学習、評価
 def train_subsec5(
-        data_dir, batch_size, dryrun, device="cuda:0", target_optimizer=None, n_epochs=1, **config
+        data_dir, batch_size, dryrun, device="cuda:0", target_optimizer=None, n_epochs=1, **kwargs
         ):
-    model = torchvision.models.resnet50(weights=torchvision.models.ResNet50_Weights.IMAGENET1K_V2)    #事前学習済みresnet50
-    model.fc = torch.nn.Linear(model.fc.in_features, 2)   #出力層が1000次元になっているため2クラス分類に合わせる
-    model.to(device)
-
-    optimizer = make_optimizer(model.parameters(), **config['optimizer_v3'][target_optimizer])   #最適化アルゴリズム
     #DataLoaderを呼び出す
     train_loader, val_loader = setup_train_val_loaders(
         data_dir, batch_size, dryrun
     )
-    train(
-        model, optimizer, train_loader, val_loader, n_epochs=n_epochs, device=device
+    model = torchvision.models.resnet50(weights=torchvision.models.ResNet50_Weights.IMAGENET1K_V2)    #事前学習済みresnet50
+    model.fc = torch.nn.Linear(model.fc.in_features, 2)   #出力層が1000次元になっているため2クラス分類に合わせる
+    model.to(device)
+
+    optimizer = make_optimizer(model.parameters(), **kwargs['optimizer_v3'][target_optimizer])   #最適化アルゴリズム
+    #1エポックのイテレーション数✖️エポック数
+    n_iterations = len(train_loader) * n_epochs
+    #Schedulerの作成
+    lr_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+        optimizer, n_iterations
     )
-    return model  #<--これべつにいらないかも（必要）
+
+    train(
+        model, optimizer, lr_scheduler, train_loader=train_loader, val_loader=val_loader, n_epochs=n_epochs, device=device
+    )
+    # return model  #<--これべつにいらないかも（必要）（run_6を作成したあとはいらないかも）
 
 
 #testデータに対する予測、出力を実行
@@ -282,13 +292,54 @@ def predict_subsec5(
 
 #学習から推論まで一連をまとめて実行(base model)
 def run_5(
-        data_dir, out_dir, dryrun, device, target_optimizer, n_epochs, **config
+        data_dir, out_dir, dryrun, device, target_optimizer, n_epochs, **kwargs
         ):
     batch_size = 32
-    model = train_subsec5(data_dir, batch_size, dryrun, device, target_optimizer, n_epochs, **config)
+    model = train_subsec5(data_dir, batch_size, dryrun, device, target_optimizer, n_epochs, **kwargs)
 
     # clip無しの推論
     predict_subsec5(data_dir, out_dir, model, batch_size, dryrun, device)
+
+
+#学習、推論の一連を実行（add Scheduler, weight_decay）
+def run_6(
+        data_dir, out_dir, dryrun, device, target_optimizer, n_epochs, **kwargs
+):
+    batch_size = 32
+    train_loader, val_loader = setup_train_val_loaders(
+        data_dir=data_dir, batch_size=batch_size, dryrun=dryrun
+        )
+
+    #学習アーキテクチャ
+    model = torchvision.models.resnet50(weights=torchvision.models.ResNet50_Weights.IMAGENET1K_V2)
+    model.fc = torch.nn.Linear(model.fc.in_features, 2)   #出力層が1000次元になっているため2クラス分類に合わせる
+    model.to(device)
+    #最適化アルゴリズム
+    optimizer = make_optimizer(model.parameters(), **kwargs['optimizer_v3'][target_optimizer])
+    #len(train_loader) : 1エポックのイテレーション数（20000/32=625）
+    #1エポックのイテレーション数✖️エポック数
+    n_iterations = len(train_loader) * n_epochs  
+    
+    #Schedulerの作成
+    lr_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+        optimizer, n_iterations
+    )
+    #学習
+    train(
+        model, optimizer, lr_scheduler, train_loader, val_loader, n_epochs, device
+    )
+
+    test_loader, image_ids = setup_test_loader(
+        data_dir, batch_size, dryrun=dryrun
+    )
+    #testデータに対する予測
+    preds = predict(model, test_loader, device)
+    #推論結果をcsvに書き出し
+    write_prediction(image_ids, prediction=preds, out_path=out_dir / "out.csv")
+
+    
+
+
 
 #引数の処理
 def get_args():
@@ -306,6 +357,7 @@ def get_args():
 
     args = parser.parse_args()  # 引数を解析
     return args
+
 
 def main(args):
     #引数をオブジェクトに
@@ -329,7 +381,6 @@ def main(args):
     print(type(data_dir))
     print(data_dir.exists())    #パスの存在を確認
     print(train_dir)
-    print(device)
     if torch.cuda.is_available():
         print('cuda:0 is available')
     else:
@@ -351,7 +402,7 @@ def main(args):
             )
     #学習、推論
     else:
-        run_5(
+        run_6(
             data_dir=data_dir
             , out_dir=out_dir
             , dryrun=dryrun
