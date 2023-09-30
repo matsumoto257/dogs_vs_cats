@@ -304,7 +304,7 @@ def run_5(
 #学習、推論の一連を実行（add Scheduler, weight_decay）
 def run_6(
         data_dir, out_dir, dryrun, device, target_optimizer, n_epochs, **kwargs
-):
+        ):
     batch_size = 32
     train_loader, val_loader = setup_train_val_loaders(
         data_dir=data_dir, batch_size=batch_size, dryrun=dryrun
@@ -389,7 +389,7 @@ def main(args):
 
 
     #学習のみ
-    if forecasts == False:
+    if not forecasts:
         batch_size = 32
         train_subsec5(
             data_dir=data_dir
