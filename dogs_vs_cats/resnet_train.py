@@ -49,6 +49,23 @@ def setup_center_crop_transform():
         ]
     )
 
+#データ拡張
+def setup_crop_flip_transform():
+    """
+    transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
+    指定した平均, 標準偏差でTensorを正規化
+    平均、標準偏差はresnet50のデフォルトの値を使用
+    https://discuss.pytorch.org/t/what-is-the-correct-pytorch-resnet50-input-normalization-intensity-range/147540
+    """
+    return transforms.Compose(
+        [
+            transforms.RandomResizedCrop(224),    # random crop
+            transforms.RandomHorizontalFlip(),    # random flip:画像を左右反転
+            transforms.ToTensor(),  # 画像データをtensor形式に
+            transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])   
+        ]
+    )
+
 
 # trainデータの正解ラベル(dog=1,cat=0)を返す
 def get_labels(dataset):

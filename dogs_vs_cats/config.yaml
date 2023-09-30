@@ -1,11 +1,5 @@
 #マッピング
 optimizer:
-  SGD:
-    name: SGD
-    lr: 0.01
-    momentum: 0.9
-
-optimizer_v2:
   target: SGD
   ourputs:
     SGD:
@@ -25,8 +19,13 @@ optimizer_v3:
     name: Adam
     lr: 0.05
 
-model:
-  name: resnet50
+scheduler:
+  cosineannealing:
+    name: CosineAnnealingLR
+
+architecture:
+  resnet50:
+    name: resnet50
 
 test:
   # - はシーケンス（配列・リスト）
