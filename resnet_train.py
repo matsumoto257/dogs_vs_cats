@@ -1,4 +1,5 @@
 import argparse
+import copy
 import pathlib
 import numpy as np
 import sklearn.model_selection
@@ -354,8 +355,70 @@ def run_6(
     #推論結果をcsvに書き出し
     write_prediction(image_ids, prediction=preds, out_path=out_dir / "out.csv")
 
-    
 
+
+def run_7_1(
+        data_dir, out_dir, dryrun, device, target_optimizer, n_epochs, **kwargs
+    ):
+
+    batch_size = 32
+    train_dataset, val_dataset = setup_train_val_datasets(
+        data_dir, dryrun=dryrun
+    )
+    train_dataset = copy.deepcopy(
+        train_dataset
+    )  # transformを設定した際にval_datasetに影響したくない
+
+    # train_dataset : Subset
+    # train_dataset.dataset : ImageFolder
+    """
+    以下の書き方も同じ
+    train_dataset.dataset = torchvision.datasets.ImageFolder(
+        os.path.join(data_dir, "train"),   #trainデータの入っているディレクトリのパス
+        transform=setup_crop_flip_transform()
+    )
+    """
+    train_dataset.dataset.transform = setup_crop_flip_transform()    # ImageFolderのtransformをsetup_crop_flip_transform()に変更
+    print(train_dataset.dataset)
+    #再度DataLoaderを設定
+    train_loader = torch.utils.data.DataLoader(
+        train_dataset,
+        batch_size=batch_size,
+        shuffle=True,
+        drop_last=True,
+        num_workers=2,
+    )
+    val_loader = torch.utils.data.DataLoader(
+        val_dataset, batch_size=batch_size, num_workers=2
+    )
+    
+    #学習アーキテクチャ
+    model = torchvision.models.resnet50(weights=torchvision.models.ResNet50_Weights.IMAGENET1K_V2)
+    model.fc = torch.nn.Linear(model.fc.in_features, 2)   #出力層が1000次元になっているため2クラス分類に合わせる
+    model.to(device)
+    #最適化アルゴリズム
+    optimizer = make_optimizer(model.parameters(), **kwargs['optimizer_v3'][target_optimizer])
+    #len(train_loader) : 1エポックのイテレーション数（20000/32=625）
+    #1エポックのイテレーション数✖️エポック数
+    n_iterations = len(train_loader) * n_epochs  
+    
+    #Schedulerの作成
+    lr_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+        optimizer, n_iterations
+    )
+    #学習
+    train(
+        model, optimizer, lr_scheduler, train_loader, val_loader, n_epochs, device
+    )
+
+    test_loader, image_ids = setup_test_loader(
+        data_dir, batch_size, dryrun=dryrun
+    )
+    #testデータに対する予測
+    preds = predict(model, test_loader, device)
+    #推論結果をcsvに書き出し
+    write_prediction(image_ids, prediction=preds, out_path=out_dir / "out.csv")
+    
 
 
 #引数の処理
@@ -419,7 +482,7 @@ def main(args):
             )
     #学習、推論
     else:
-        run_6(
+        run_7_1(
             data_dir=data_dir
             , out_dir=out_dir
             , dryrun=dryrun
