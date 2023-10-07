@@ -269,6 +269,10 @@ def make_optimizer(params, name, **kwargs):
     # m.x は m.__dict__["x"] と等価です（e.g. torch.optim.SGD  ==  torch.optim.__dict__['SGD']）
     return torch.optim.__dict__[name](params, **kwargs)
 
+#lr_schedulerを作成
+def make_scheduler(optimizer, n_iterations, name, **kwargs):
+    return torch.optim.lr_scheduler.__dict__[name](optimizer, n_iterations, **kwargs)
+
 
 #1エポック(=625イテレーション|batch_size = 32)の学習を実行および学習済みのモデルを返す
 #モデル定義->optimizer定義->訓練用、検証用のdataloaderを呼び出す->学習、評価
@@ -283,7 +287,7 @@ def train_subsec5(
     model.fc = torch.nn.Linear(model.fc.in_features, 2)   #出力層が1000次元になっているため2クラス分類に合わせる
     model.to(device)
 
-    optimizer = make_optimizer(model.parameters(), **kwargs['optimizer_v3'][target_optimizer])   #最適化アルゴリズム
+    optimizer = make_optimizer(model.parameters(), **kwargs['optimizer'][target_optimizer])   #最適化アルゴリズム
     #1エポックのイテレーション数✖️エポック数
     n_iterations = len(train_loader) * n_epochs
     #Schedulerの作成
@@ -333,7 +337,7 @@ def run_6(
     model.fc = torch.nn.Linear(model.fc.in_features, 2)   #出力層が1000次元になっているため2クラス分類に合わせる
     model.to(device)
     #最適化アルゴリズム
-    optimizer = make_optimizer(model.parameters(), **kwargs['optimizer_v3'][target_optimizer])
+    optimizer = make_optimizer(model.parameters(), **kwargs['optimizer'][target_optimizer])
     #len(train_loader) : 1エポックのイテレーション数（20000/32=625）
     #1エポックのイテレーション数✖️エポック数
     n_iterations = len(train_loader) * n_epochs  
@@ -356,9 +360,9 @@ def run_6(
     write_prediction(image_ids, prediction=preds, out_path=out_dir / "out.csv")
 
 
-
+# add random flip random crop
 def run_7_1(
-        data_dir, out_dir, dryrun, device, target_optimizer, n_epochs, **kwargs
+        data_dir, out_dir, dryrun, device, target_optimizer, target_scheduler, n_epochs, **kwargs
     ):
 
     batch_size = 32
@@ -379,7 +383,6 @@ def run_7_1(
     )
     """
     train_dataset.dataset.transform = setup_crop_flip_transform()    # ImageFolderのtransformをsetup_crop_flip_transform()に変更
-    print(train_dataset.dataset)
     #再度DataLoaderを設定
     train_loader = torch.utils.data.DataLoader(
         train_dataset,
@@ -397,15 +400,13 @@ def run_7_1(
     model.fc = torch.nn.Linear(model.fc.in_features, 2)   #出力層が1000次元になっているため2クラス分類に合わせる
     model.to(device)
     #最適化アルゴリズム
-    optimizer = make_optimizer(model.parameters(), **kwargs['optimizer_v3'][target_optimizer])
+    optimizer = make_optimizer(model.parameters(), **kwargs['optimizer'][target_optimizer])
     #len(train_loader) : 1エポックのイテレーション数（20000/32=625）
     #1エポックのイテレーション数✖️エポック数
     n_iterations = len(train_loader) * n_epochs  
     
     #Schedulerの作成
-    lr_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
-        optimizer, n_iterations
-    )
+    lr_scheduler = make_scheduler(optimizer, n_iterations, **kwargs['scheduler'][target_scheduler])
     #学習
     train(
         model, optimizer, lr_scheduler, train_loader, val_loader, n_epochs, device
@@ -419,6 +420,8 @@ def run_7_1(
     #推論結果をcsvに書き出し
     write_prediction(image_ids, prediction=preds, out_path=out_dir / "out.csv")
     
+    print(train_dataset.dataset.transform)
+    print(lr_scheduler)
 
 
 #引数の処理
@@ -434,6 +437,7 @@ def get_args():
     parser.add_argument("--n_epochs", default=1, type=int)   #エポック数を指定、整数値に変換
     # モデルのconfig
     parser.add_argument("--optimizer", required=True)   #optimizerの指定は''はあってもなくても同じそう（コマンドライン引数で指定された値はデフォルトでは文字列型）
+    parser.add_argument("--lr_scheduler")   #schedulerの設定（後々optimizerで指定できるように）
 
     args = parser.parse_args()  # 引数を解析
     return args
@@ -450,6 +454,7 @@ def main(args):
     dryrun = args.dryrun
     n_epochs = args.n_epochs
     target_optimizer = args.optimizer
+    target_scheduler = args.lr_scheduler
 
     #config.yamlの読み込んで辞書型オブジェクトconfigの作成
     with open(config_file_path, 'r') as f:
@@ -477,6 +482,7 @@ def main(args):
             , dryrun=dryrun
             , device=device
             , target_optimizer=target_optimizer
+            , target_scheduler=target_scheduler
             , n_epochs=n_epochs
             , **config
             )
@@ -488,6 +494,7 @@ def main(args):
             , dryrun=dryrun
             , device=device
             , target_optimizer=target_optimizer
+            , target_scheduler=target_scheduler
             , n_epochs=n_epochs
             , **config
             )
