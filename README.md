@@ -1,15 +1,13 @@
 # dogs_vs_cats
 
-```resnet_train.py``` : とりあえず写経  
-```dog_vs_cats.ipynb``` : 実験的にコードを実行したい
-## ライブラリのインストール
+## installation
 ```
 pip install -r requirements.txt
 ```
 
-## 実行
+## run
 ```python
-python resnet_train.py
+python main.py
 ```
 |options|description|
 |:--:|:--|
