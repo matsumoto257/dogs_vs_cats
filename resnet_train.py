@@ -1,4 +1,5 @@
 import argparse
+import copy
 import pathlib
 import numpy as np
 import sklearn.model_selection
@@ -260,6 +261,10 @@ def write_prediction(image_ids, prediction, out_path):
 # 5: First try
 #
 
+#アーキテクチャの作成
+def make_architecture(name, **kwargs):
+    return torchvision.models.__dict__[name](**kwargs)
+
 #make_optimizerの作り方
 #https://rightcode.co.jp/blog/information-technology/pytorch-yaml-optimizer-parameter-management-simple-method-complete
 def make_optimizer(params, name, **kwargs):
@@ -267,6 +272,10 @@ def make_optimizer(params, name, **kwargs):
     # params : 更新したいパラメータを渡す.このパラメータは微分可能であること
     # m.x は m.__dict__["x"] と等価です（e.g. torch.optim.SGD  ==  torch.optim.__dict__['SGD']）
     return torch.optim.__dict__[name](params, **kwargs)
+
+#lr_schedulerを作成
+def make_scheduler(optimizer, n_iterations, name, **kwargs):
+    return torch.optim.lr_scheduler.__dict__[name](optimizer, n_iterations, **kwargs)
 
 
 #1エポック(=625イテレーション|batch_size = 32)の学習を実行および学習済みのモデルを返す
@@ -282,7 +291,7 @@ def train_subsec5(
     model.fc = torch.nn.Linear(model.fc.in_features, 2)   #出力層が1000次元になっているため2クラス分類に合わせる
     model.to(device)
 
-    optimizer = make_optimizer(model.parameters(), **kwargs['optimizer_v3'][target_optimizer])   #最適化アルゴリズム
+    optimizer = make_optimizer(model.parameters(), **kwargs['optimizer'][target_optimizer])   #最適化アルゴリズム
     #1エポックのイテレーション数✖️エポック数
     n_iterations = len(train_loader) * n_epochs
     #Schedulerの作成
@@ -296,51 +305,53 @@ def train_subsec5(
     # return model  #<--これべつにいらないかも（必要）（run_6を作成したあとはいらないかも）
 
 
-#testデータに対する予測、出力を実行
-def predict_subsec5(
-        data_dir, out_dir, model, batch_size, dryrun, device="cuda:0"
-        ):
-    test_loader, image_ids = setup_test_loader(
-        data_dir, batch_size, dryrun=dryrun
+# add random flip random crop
+def run_7_1(
+        data_dir, out_dir, dryrun, device, target_architecture, target_optimizer, target_scheduler, n_epochs, **kwargs
+    ):
+
+    batch_size = 32
+    train_dataset, val_dataset = setup_train_val_datasets(
+        data_dir, dryrun=dryrun
     )
-    preds = predict(model, test_loader, device)
-    write_prediction(image_ids, preds, out_dir / "out.csv")  #Pathオブジェクトに対して/演算子を使うとパスが連結される
+    train_dataset = copy.deepcopy(
+        train_dataset
+    )  # transformを設定した際にval_datasetに影響したくない
 
-
-#学習から推論まで一連をまとめて実行(base model)
-def run_5(
-        data_dir, out_dir, dryrun, device, target_optimizer, n_epochs, **kwargs
-        ):
-    batch_size = 32
-    model = train_subsec5(data_dir, batch_size, dryrun, device, target_optimizer, n_epochs, **kwargs)
-
-    # clip無しの推論
-    predict_subsec5(data_dir, out_dir, model, batch_size, dryrun, device)
-
-
-#学習、推論の一連を実行（add Scheduler, weight_decay）
-def run_6(
-        data_dir, out_dir, dryrun, device, target_optimizer, n_epochs, **kwargs
-        ):
-    batch_size = 32
-    train_loader, val_loader = setup_train_val_loaders(
-        data_dir=data_dir, batch_size=batch_size, dryrun=dryrun
-        )
-
+    # train_dataset : Subset
+    # train_dataset.dataset : ImageFolder
+    """
+    以下の書き方も同じ
+    train_dataset.dataset = torchvision.datasets.ImageFolder(
+        os.path.join(data_dir, "train"),   #trainデータの入っているディレクトリのパス
+        transform=setup_crop_flip_transform()
+    )
+    """
+    train_dataset.dataset.transform = setup_crop_flip_transform()    # ImageFolderのtransformをsetup_crop_flip_transform()に変更
+    #再度DataLoaderを設定
+    train_loader = torch.utils.data.DataLoader(
+        train_dataset,
+        batch_size=batch_size,
+        shuffle=True,
+        drop_last=True,
+        num_workers=2,
+    )
+    val_loader = torch.utils.data.DataLoader(
+        val_dataset, batch_size=batch_size, num_workers=2
+    )
+    
     #学習アーキテクチャ
-    model = torchvision.models.resnet50(weights=torchvision.models.ResNet50_Weights.IMAGENET1K_V2)
+    model = make_architecture(**kwargs['architecture'][target_architecture])
     model.fc = torch.nn.Linear(model.fc.in_features, 2)   #出力層が1000次元になっているため2クラス分類に合わせる
     model.to(device)
     #最適化アルゴリズム
-    optimizer = make_optimizer(model.parameters(), **kwargs['optimizer_v3'][target_optimizer])
+    optimizer = make_optimizer(model.parameters(), **kwargs['optimizer'][target_optimizer])
     #len(train_loader) : 1エポックのイテレーション数（20000/32=625）
     #1エポックのイテレーション数✖️エポック数
     n_iterations = len(train_loader) * n_epochs  
     
     #Schedulerの作成
-    lr_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
-        optimizer, n_iterations
-    )
+    lr_scheduler = make_scheduler(optimizer, n_iterations, **kwargs['scheduler'][target_scheduler])
     #学習
     train(
         model, optimizer, lr_scheduler, train_loader, val_loader, n_epochs, device
@@ -353,9 +364,9 @@ def run_6(
     preds = predict(model, test_loader, device)
     #推論結果をcsvに書き出し
     write_prediction(image_ids, prediction=preds, out_path=out_dir / "out.csv")
-
     
-
+    print(train_dataset.dataset.transform)
+    print('スケジューラー\n', lr_scheduler)
 
 
 #引数の処理
@@ -370,7 +381,9 @@ def get_args():
     parser.add_argument("--dryrun", action="store_true")   #オプションを指定:True、オプションを指定しない:False
     parser.add_argument("--n_epochs", default=1, type=int)   #エポック数を指定、整数値に変換
     # モデルのconfig
+    parser.add_argument("--architecture", required=True)   #architecture
     parser.add_argument("--optimizer", required=True)   #optimizerの指定は''はあってもなくても同じそう（コマンドライン引数で指定された値はデフォルトでは文字列型）
+    parser.add_argument("--lr_scheduler")   #schedulerの設定（後々optimizerで指定できるように）
 
     args = parser.parse_args()  # 引数を解析
     return args
@@ -386,7 +399,9 @@ def main(args):
     device = args.device
     dryrun = args.dryrun
     n_epochs = args.n_epochs
+    target_architecture = args.architecture
     target_optimizer = args.optimizer
+    target_scheduler = args.lr_scheduler
 
     #config.yamlの読み込んで辞書型オブジェクトconfigの作成
     with open(config_file_path, 'r') as f:
@@ -413,18 +428,22 @@ def main(args):
             , batch_size=batch_size
             , dryrun=dryrun
             , device=device
+            , target_architecture=target_architecture
             , target_optimizer=target_optimizer
+            , target_scheduler=target_scheduler
             , n_epochs=n_epochs
             , **config
             )
     #学習、推論
     else:
-        run_6(
+        run_7_1(
             data_dir=data_dir
             , out_dir=out_dir
             , dryrun=dryrun
             , device=device
+            , target_architecture=target_architecture
             , target_optimizer=target_optimizer
+            , target_scheduler=target_scheduler
             , n_epochs=n_epochs
             , **config
             )

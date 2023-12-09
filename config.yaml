@@ -1,15 +1,11 @@
-#マッピング
-optimizer:
-  target: SGD
-  ourputs:
-    SGD:
-      name: SGD
-      lr: 0.01
-      momentum: 0.9
-    Adam:
-      name: Adam
+#architecture
+architecture:
+  resnet50:
+    name: resnet50
+    weights: IMAGENET1K_V2
 
-optimizer_v3:
+#optimizer
+optimizer:
   SGD:
     name: SGD
     lr: 0.01
@@ -19,13 +15,11 @@ optimizer_v3:
     name: Adam
     lr: 0.05
 
+#lrのscheduler
 scheduler:
   cosineannealing:
     name: CosineAnnealingLR
 
-architecture:
-  resnet50:
-    name: resnet50
 
 test:
   # - はシーケンス（配列・リスト）
