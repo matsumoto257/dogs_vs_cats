@@ -263,7 +263,10 @@ def write_prediction(image_ids, prediction, out_path):
 
 #アーキテクチャの作成
 def make_architecture(name, **kwargs):
-    return torchvision.models.__dict__[name](**kwargs)
+    model = torchvision.models.__dict__[name](**kwargs)
+    if name == "resnet50":
+        model.fc = torch.nn.Linear(model.fc.in_features, 2)   #出力層が1000次元になっているため2クラス分類に合わせる
+    return model
 
 #make_optimizerの作り方
 #https://rightcode.co.jp/blog/information-technology/pytorch-yaml-optimizer-parameter-management-simple-method-complete
@@ -342,7 +345,6 @@ def run_7_1(
     
     #学習アーキテクチャ
     model = make_architecture(**kwargs['architecture'][target_architecture])
-    model.fc = torch.nn.Linear(model.fc.in_features, 2)   #出力層が1000次元になっているため2クラス分類に合わせる
     model.to(device)
     #最適化アルゴリズム
     optimizer = make_optimizer(model.parameters(), **kwargs['optimizer'][target_optimizer])

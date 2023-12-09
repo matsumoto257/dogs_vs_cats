@@ -2,7 +2,10 @@
 architecture:
   resnet50:
     name: resnet50
-    weights: IMAGENET1K_V2
+    weights: IMAGENET1K_V2   # resnet50のデフォルトweight
+  AlexNet:
+    name: alexnet
+    weights: IMAGENET1K_V1   # AlexNetのデフォルトweight
 
 #optimizer
 optimizer:
