@@ -373,7 +373,7 @@ def run_7_1(
 def get_args():
     parser = argparse.ArgumentParser()   #パーサを作る
     # parser.add_argumentで受け取る引数を追加していく
-    parser.add_argument("--data_dir", required=True)  # オプション引数を追加,required=True:指定必須
+    parser.add_argument("--data_dir", default="./dogs-vs-cats-redux-kernels-edition")  # オプション引数を追加,required=True:指定必須
     parser.add_argument("--config_path", default="./config.yaml")   #config.yamlのパス
     parser.add_argument("--out_dir", default="./out")
     parser.add_argument("--forecasts", action="store_true")  #学習のみか学習&推論 true : 推論も
@@ -381,9 +381,9 @@ def get_args():
     parser.add_argument("--dryrun", action="store_true")   #オプションを指定:True、オプションを指定しない:False
     parser.add_argument("--n_epochs", default=1, type=int)   #エポック数を指定、整数値に変換
     # モデルのconfig
-    parser.add_argument("--architecture", required=True)   #architecture
-    parser.add_argument("--optimizer", required=True)   #optimizerの指定は''はあってもなくても同じそう（コマンドライン引数で指定された値はデフォルトでは文字列型）
-    parser.add_argument("--lr_scheduler")   #schedulerの設定（後々optimizerで指定できるように）
+    parser.add_argument("--architecture", default="resnet50")   #architecture
+    parser.add_argument("--optimizer", default="SGD")   #optimizerの指定は''はあってもなくても同じそう（コマンドライン引数で指定された値はデフォルトでは文字列型）
+    parser.add_argument("--lr_scheduler", default="cosineannealing")   #schedulerの設定（後々optimizerで指定できるように）
 
     args = parser.parse_args()  # 引数を解析
     return args
