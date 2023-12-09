@@ -1,3 +1,9 @@
+#architecture
+architecture:
+  resnet50:
+    name: resnet50
+    weights: IMAGENET1K_V2
+
 #optimizer
 optimizer:
   SGD:
@@ -14,9 +20,6 @@ scheduler:
   cosineannealing:
     name: CosineAnnealingLR
 
-architecture:
-  resnet50:
-    name: resnet50
 
 test:
   # - はシーケンス（配列・リスト）
