@@ -2,12 +2,13 @@
 
 ## installation
 ```
-pip install -r requirements.txt
+pip install poetry
+poetry install
 ```
 
 ## run
-```python
-python main.py
+```
+poetry run python main.py
 ```
 |options|description|
 |:--:|:--|
