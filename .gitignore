@@ -6,6 +6,7 @@ venv/
 .DS_Store
 .ipynb_checkpoints
 .python-version
+.python-version
 
 .vscode/
 
