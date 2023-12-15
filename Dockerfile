@@ -1,5 +1,5 @@
 # 実行環境というよりは開発環境
-FROM python:3
+FROM python:3.10
 USER root
 
 WORKDIR /root/work/
