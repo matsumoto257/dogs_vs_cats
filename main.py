@@ -555,10 +555,6 @@ def main(args):
 
     train_dir = os.path.join(data_dir, "train")
 
-    print(data_dir)   #パスオブジェクト
-    print(type(data_dir))
-    print(data_dir.exists())    #パスの存在を確認
-    print(train_dir)
     if torch.cuda.is_available():
         print('cuda:0 is available')
     else:
