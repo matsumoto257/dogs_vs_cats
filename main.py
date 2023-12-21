@@ -2,6 +2,7 @@ import os
 import argparse
 import copy
 import pathlib
+import time
 
 import numpy as np
 import sklearn.model_selection
@@ -461,7 +462,7 @@ def run_7_3(
     batch_size = 32
     # n_epochs = 2 if dryrun else 3
     # n_mixup_epochs = 1 if dryrun else 7
-    n_mixup_epochs = n_epochs - 1
+    n_mixup_epochs = n_epochs - 3
     mixup_alpha = 0.4
 
     train_dataset, val_dataset = setup_train_val_datasets(
@@ -564,6 +565,7 @@ def main(args):
         device = "cpu"
         print('cuda:0 is not available')
 
+    t1 = time.time()
 
     #学習のみ
     if not forecasts:
@@ -592,6 +594,10 @@ def main(args):
             , n_epochs=n_epochs
             , **config
             )
+
+    t2 = time.time()
+    elapsed_time = t2 - t1
+    print(f"実行時間 : {elapsed_time}s")
 
 if __name__ == "__main__":
     main(get_args())
