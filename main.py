@@ -350,6 +350,8 @@ def make_architecture(name, **kwargs):
     model = torchvision.models.__dict__[name](**kwargs)
     if name == "resnet50":
         model.fc = torch.nn.Linear(model.fc.in_features, 2)   #出力層が1000次元になっているため2クラス分類に合わせる
+    elif name == "alexnet":
+        model.classifier[-1] = torch.nn.Linear(in_features=4096, out_features=2)
     return model
 
 #make_optimizerの作り方
