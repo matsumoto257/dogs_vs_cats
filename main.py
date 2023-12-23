@@ -2,6 +2,7 @@ import os
 import argparse
 import copy
 import pathlib
+import time
 
 import numpy as np
 import sklearn.model_selection
@@ -95,6 +96,13 @@ def setup_train_val_datasets(data_dir, dryrun=False):
     train_dataset = torch.utils.data.Subset(dataset, train_indices)
     val_dataset = torch.utils.data.Subset(dataset, val_indices)
     return train_dataset, val_dataset
+
+
+def set_transform(dataset, transform):
+    if isinstance(dataset, torch.utils.data.Subset):
+        set_transform(dataset.dataset, transform)
+    else:
+        dataset.transform = transform
 
 
 #DataLoaderを設定
@@ -194,6 +202,82 @@ def train(model, optimizer, lr_scheduler, train_loader, val_loader, n_epochs, de
         )
 
 
+########################################################################################################################
+# mixup
+########################################################################################################################
+
+def train_1epoch_mixup(
+    model, train_loader, lossfun, optimizer, lr_scheduler, mixup_alpha, device
+):
+    model.train()
+    total_loss, total_acc = 0.0, 0.0
+
+    for x, y in tqdm(train_loader):
+        x = x.to(device)
+        y = y.to(device)
+
+        lmd = np.random.beta(mixup_alpha, mixup_alpha)
+        perm = torch.randperm(x.shape[0]).to(device)
+        x2 = x[perm, :]
+        y2 = y[perm]
+
+        optimizer.zero_grad()
+        out = model(lmd * x + (1.0 - lmd) * x2)
+        loss = lmd * lossfun(out, y) + (1.0 - lmd) * lossfun(out, y2)
+        loss.backward()
+        optimizer.step()
+        lr_scheduler.step()
+
+        _, pred = torch.max(out.detach(), 1)
+        total_loss += loss.item() * x.size(0)
+        total_acc += lmd * torch.sum(pred == y) + (1.0 - lmd) * torch.sum(
+            pred == y2
+        )
+
+    avg_loss = total_loss / len(train_loader.dataset)
+    avg_acc = total_acc / len(train_loader.dataset)
+    return avg_acc, avg_loss
+
+
+def train3_mixup(
+    model,
+    optimizer,
+    lr_scheduler,
+    train_loader,
+    val_loader,
+    n_epochs,
+    n_mixup_epochs,
+    mixup_alpha,
+    device,
+):
+    lossfun = torch.nn.CrossEntropyLoss()
+    last_val_loss = 0.0
+
+    for epoch in tqdm(range(n_epochs)):
+        if epoch < n_mixup_epochs:  # あらかじめ設定したn_mixup_epochsがn_mixup_epochs-1回目のepochまで適用される
+            train_acc, train_loss = train_1epoch_mixup(
+                model,
+                train_loader,
+                lossfun,
+                optimizer,
+                lr_scheduler,
+                mixup_alpha,
+                device,
+            )
+        else:
+            train_acc, train_loss = train_1epoch(
+                model, train_loader, lossfun, optimizer, lr_scheduler, device
+            )
+
+        val_acc, val_loss = validate_1epoch(model, val_loader, lossfun, device)
+        last_val_loss = val_loss
+
+        lr = optimizer.param_groups[0]["lr"]
+        print(
+            f"epoch={epoch}, train_loss={train_loss}, train_accuracy={train_acc}, val_loss={val_loss}, val_accuracy={val_acc}, device={device}, optimizer={optimizer}, lr={lr}"
+        )
+
+    return last_val_loss
 
 ########################################################################################################################
 # predict
@@ -266,6 +350,8 @@ def make_architecture(name, **kwargs):
     model = torchvision.models.__dict__[name](**kwargs)
     if name == "resnet50":
         model.fc = torch.nn.Linear(model.fc.in_features, 2)   #出力層が1000次元になっているため2クラス分類に合わせる
+    elif name == "alexnet":
+        model.classifier[-1] = torch.nn.Linear(in_features=4096, out_features=2)
     return model
 
 #make_optimizerの作り方
@@ -371,6 +457,66 @@ def run_7_1(
     print('スケジューラー\n', lr_scheduler)
 
 
+
+def run_7_3(
+        data_dir, out_dir, dryrun, device, target_architecture, target_optimizer, target_scheduler, n_epochs, **kwargs
+    ):
+    batch_size = 32
+    # n_epochs = 2 if dryrun else 3
+    # n_mixup_epochs = 1 if dryrun else 7
+    n_mixup_epochs = n_epochs - 3
+    mixup_alpha = 0.4
+
+    train_dataset, val_dataset = setup_train_val_datasets(
+        data_dir, dryrun=dryrun
+    )
+    train_dataset = copy.deepcopy(
+        train_dataset
+    )  # transformを設定した際にval_datasetに影響したくない
+    
+    train_transform = setup_crop_flip_transform()
+    set_transform(train_dataset, train_transform)
+    train_loader = torch.utils.data.DataLoader(
+        train_dataset,
+        batch_size=batch_size,
+        shuffle=True,
+        drop_last=True,
+        num_workers=2,
+    )
+    val_loader = torch.utils.data.DataLoader(
+        val_dataset, batch_size=batch_size, num_workers=2
+    )
+
+    #学習アーキテクチャ
+    model = make_architecture(**kwargs['architecture'][target_architecture])
+    model.to(device)
+
+    #最適化アルゴリズム
+    optimizer = make_optimizer(model.parameters(), **kwargs['optimizer'][target_optimizer])
+
+    n_iterations = len(train_loader) * n_epochs
+    #Schedulerの作成
+    lr_scheduler = make_scheduler(optimizer, n_iterations, **kwargs['scheduler'][target_scheduler])
+
+    train3_mixup(
+        model,
+        optimizer,
+        lr_scheduler,
+        train_loader,
+        val_loader,
+        n_epochs=n_epochs,
+        n_mixup_epochs=n_mixup_epochs,
+        mixup_alpha=mixup_alpha,
+        device=device,
+    )
+
+    test_loader, image_ids = setup_test_loader(
+        data_dir, batch_size, dryrun=dryrun
+    )
+    preds = predict(model, test_loader, device)
+    write_prediction(image_ids, preds, out_dir / "out.csv")
+
+
 #引数の処理
 def get_args():
     parser = argparse.ArgumentParser()   #パーサを作る
@@ -411,16 +557,13 @@ def main(args):
 
     train_dir = os.path.join(data_dir, "train")
 
-    print(data_dir)   #パスオブジェクト
-    print(type(data_dir))
-    print(data_dir.exists())    #パスの存在を確認
-    print(train_dir)
     if torch.cuda.is_available():
         print('cuda:0 is available')
     else:
         device = "cpu"
         print('cuda:0 is not available')
 
+    t1 = time.time()
 
     #学習のみ
     if not forecasts:
@@ -438,7 +581,7 @@ def main(args):
             )
     #学習、推論
     else:
-        run_7_1(
+        run_7_3(
             data_dir=data_dir
             , out_dir=out_dir
             , dryrun=dryrun
@@ -449,6 +592,10 @@ def main(args):
             , n_epochs=n_epochs
             , **config
             )
+
+    t2 = time.time()
+    elapsed_time = t2 - t1
+    print(f"実行時間 : {elapsed_time}s")
 
 if __name__ == "__main__":
     main(get_args())
