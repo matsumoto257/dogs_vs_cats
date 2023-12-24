@@ -529,7 +529,7 @@ def get_args():
     parser.add_argument("--dryrun", action="store_true")   #オプションを指定:True、オプションを指定しない:False
     parser.add_argument("--n_epochs", default=1, type=int)   #エポック数を指定、整数値に変換
     # モデルのconfig
-    parser.add_argument("--architecture", default="resnet50")   #architecture
+    parser.add_argument("--architecture", default="ResNet50")   #architecture
     parser.add_argument("--optimizer", default="SGD")   #optimizerの指定は''はあってもなくても同じそう（コマンドライン引数で指定された値はデフォルトでは文字列型）
     parser.add_argument("--lr_scheduler", default="cosineannealing")   #schedulerの設定（後々optimizerで指定できるように）
 
