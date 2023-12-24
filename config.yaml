@@ -6,6 +6,9 @@ architecture:
   AlexNet:
     name: alexnet
     weights: IMAGENET1K_V1   # AlexNetのデフォルトweight
+  vgg16:
+    name: vgg16
+    weights: IMAGENET1K_V1
 
 #optimizer
 optimizer:
@@ -17,11 +20,17 @@ optimizer:
   Adam:
     name: Adam
     lr: 0.05
+  Adagrad:
+    name: Adagrad
 
 #lrのscheduler
 scheduler:
   cosineannealing:
     name: CosineAnnealingLR
+  StepLR:
+    name: StepLR
+  ExponentialLR:
+    name: ExponentialLR
 
 
 test:
